@@ -450,7 +450,7 @@ function letterPage(code, transform = {}, dimensions = {
 		spread.push(
 			foldSchematic(
 				itemX + 14,
-				inch(2),
+				grid.hanglines()[1],
 				dimensions.width + e,
 				dimensions.height,
 				code),
@@ -462,10 +462,10 @@ function letterPage(code, transform = {}, dimensions = {
 
 	return spread
 }
-function letterPageAndGraphics(code, transform = {}, dimensions = {
+function letterPageAndGraphics(code, title = "UPPERCASE", transform = {}, dimensions = {
 	width: nw,
 	height: nh,
-}, title) {
+}) {
 	return [
 		(doc) => draw_grid(doc, grid),
 		...letterPageGraphic(code, transform, dimensions),
@@ -477,6 +477,17 @@ function letterPageAndGraphics(code, transform = {}, dimensions = {
 				grid.column_width(6),
 				inch(1.3)
 			).fillAndStroke("white", 'black')
+
+			doc.fillColor("black")
+			let leading = 9
+			let line = (num) => grid.hanglines()[8] + 8 + (num * leading)
+			doc.fontSize(10.5)
+			doc.font('./monument_mono_bold.otf')
+			doc.text(title, grid.verso_columns()[1].x, grid.hanglines()[8])
+			doc.font('./monument_mono_regular.otf')
+			doc.fontSize(7)
+			doc.text("HEIGHT: " + dimensions.height, grid.verso_columns()[1].x, line(1))
+			doc.text("FOLDS: " + code.length, grid.verso_columns()[1].x, line(2))
 		},
 	]
 }
@@ -594,36 +605,40 @@ let upperCaseC = [
 ]
 
 
-spreads.push(letterPageAndGraphics(upperCaseG, {
-	yOff: 125,
-	// xOff: 40,
-	rotate: [180],
-}))
+spreads.push(letterPageAndGraphics(upperCaseG,
+	"UPPERCASE G",
+	{
+		yOff: 125,
+		// xOff: 40,
+		rotate: [180],
+	}))
 
-spreads.push(letterPageAndGraphics(upperCaseF, {
-	// yOff: -30,
-	rotate: [90],
-}))
+spreads.push(letterPageAndGraphics(upperCaseF,
+	"UPPERCASE F",
+	{
+		// yOff: -30,
+		rotate: [90],
+	}))
 
-spreads.push(letterPageAndGraphics(upperCaseF, {
-	// yOff: -30,
-	rotate: [90],
-}))
+spreads.push(letterPageAndGraphics(upperCaseB2,
+	"UPPERCASE B [VARIATION]",
+	{
+		// yOff: -30,
+		rotate: [180],
+	}))
 
-spreads.push(letterPageAndGraphics(upperCaseB2, {
-	// yOff: -30,
-	rotate: [180],
-}))
-
-spreads.push(letterPageAndGraphics(upperCaseC, {
-	// yOff: -30,
-	rotate: [45],
-}, {
+spreads.push(letterPageAndGraphics(upperCaseC,
+	"",
+	{
+		// yOff: -30,
+		rotate: [45],
+	}, {
 	width: nw,
 	height: 167,
 }))
 
-spreads.push(letterPageAndGraphics(upperCaseE, {
+spreads.push(letterPageAndGraphics(upperCaseE,
+	"", {
 	// yOff: 90,
 	// xOff: 40,
 	rotate: [90],
@@ -632,24 +647,32 @@ spreads.push(letterPageAndGraphics(upperCaseE, {
 	height: 268,
 }))
 
-spreads.push(letterPageAndGraphics(upperCaseF2, {
+spreads.push(letterPageAndGraphics(upperCaseF2,
+	"", {
+
 	rotate: [90],
 	// yOff: -30,
 }))
 
-spreads.push(letterPageAndGraphics(upperCaseE2, {
+spreads.push(letterPageAndGraphics(upperCaseE2,
+	"", {
+
 	// yOff: 90,
 	// xOff: 10,
 	rotate: [90],
 },))
 
-spreads.push(letterPageAndGraphics(upperCaseA, {
+spreads.push(letterPageAndGraphics(upperCaseA,
+	"", {
+
 	// yOff: 90,
 	// xOff: 40,
 	rotate: [168],
 }))
 
-spreads.push(letterPageAndGraphics(upperCaseB, {
+spreads.push(letterPageAndGraphics(upperCaseB,
+	"", {
+
 	// yOff: -30,
 	// rotate: [90],
 	// translate: [150, 0]
