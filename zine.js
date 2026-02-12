@@ -30,13 +30,16 @@ let tag = {
 	font: './monument_mono_medium.otf'
 }
 
-let line = (doc, x1, y1, x2, y2, strokeColor = 'black', strokeWeight = 1) => {
+let line = (doc, x1, y1, x2, y2, strokeColor = 'black', strokeWeight = 1, dash) => {
+	doc.save()
 	doc.lineWidth(strokeWeight)
-	doc.strokeColor(strokeColor)
 
 	doc.moveTo(x1, y1)                               // set the current point
 		.lineTo(x2, y2)                            // draw a line
-		.stroke();                                   // stroke the path
+
+	dash ? doc.dash(dash) : null
+	doc.stroke(strokeColor);                                   // stroke the path
+	doc.restore()
 }
 let metadata = (doc, block, dims) => {
 	let { x, y, width, height } = dims
@@ -74,7 +77,7 @@ let grid = new Grid({
 	},
 
 	gutter: inch(.125),
-	columns: 8,
+	columns: 10,
 	hanglines: [
 		inch(1),
 		inch(1 + 2 / 3),
@@ -192,7 +195,10 @@ function mirror(p, m) {
 
 function letter(
 	x, y, w, h,
-	code, transforms, color = 'blue'
+	code, transforms,
+	color = 'blue', annotate = false,
+	fill = [100, 0, 0, 0],
+	boxDraw = true
 ) {
 	let mainrect = [
 		v(x, y),
@@ -213,7 +219,37 @@ function letter(
 
 	baselines.push([vdup(mainrect[3]), vdup(mainrect[2])])
 	let lines = baselines
+	function rotateVector(vector, center, angleDeg) {
+		const angleRad = angleDeg * (Math.PI / 180);
 
+		const cos = Math.cos(angleRad);
+		const sin = Math.sin(angleRad);
+
+		// Translate point to origin
+		const dx = vector.x - center.x;
+		const dy = vector.y - center.y;
+
+		// Rotate
+		const rotatedX = dx * cos - dy * sin;
+		const rotatedY = dx * sin + dy * cos;
+
+		// Translate back
+		return {
+			x: rotatedX + center.x,
+			y: rotatedY + center.y
+		};
+	}
+
+	if (transforms.rotate) {
+		lines = lines.map(([a, b]) => {
+			let pointA = rotateVector(a, { x, y }, transforms.rotate[0])
+			let pointB = rotateVector(b, { x, y }, transforms.rotate[0])
+
+			return [pointA, pointB]
+		})
+
+		mainrect = mainrect.map(e => rotateVector(e, { x, y }, transforms.rotate[0]))
+	}
 
 	let spread = []
 	let _index = 0
@@ -225,20 +261,16 @@ function letter(
 		lines[0][0]
 	]
 
-	points.push(...firstQuad)
+	points.push(firstQuad)
 
 	spread.push(doc => {
 		doc.save()
 		Object.entries(transforms).forEach(([key, value]) => {
 			if (!Array.isArray(value)) return
-			if (key == 'rotate') doc[key](...value, { origin: [x, y] })
+			if (key == 'rotate') { }
+			//doc[key](...value, { origin: [x, y] })
 			else doc[key](...value)
 		})
-	})
-
-	spread.push((doc) => {
-		drawQuadDocFn(
-			{ points: firstQuad, fill: 'white', stroke: color, strokeWeight: 1 })(doc)
 	})
 
 
@@ -257,26 +289,61 @@ function letter(
 			return acc
 		}, [])
 
-		spread.push((doc) => {
-			drawQuadDocFn(
-				{
-					lineJoin: 'round',
-					points: f, fill: 'white', stroke: color, strokeWeight: 1
-				})(doc)
-		})
 
-		points.push(...f)
+		points.push(f)
 
 		_index++
 	}
 
-	let box = getBounds(points)
+	let box = getBounds(points.flat())
+
+	let random = (num) => (Math.random() * (Math.random > .5 ? 1 : -1)) * num
+	let diffX = x - box.x //+ random(35)
+	let diffY = y - box.y //+ random(35)
+
+
+	points.forEach(quad => {
+		let _quad = quad.map(e => {
+			e.x = e.x + diffX
+			e.y = e.y + diffY
+			return e
+		})
+
+		spread.push((doc) => {
+			drawQuadDocFn(
+				{
+					lineJoin: 'round',
+					points: _quad, fill: fill, stroke: color, strokeWeight: 1
+				})(doc)
+		})
+
+	})
 
 	let padding = 25
 	spread.push(doc => {
-		doc.rect(box.x - padding, box.y - padding, box.width + padding * 2, box.height + padding * 2)
-		doc.lineWidth(.5)
-		doc.stroke('blue')
+		// line(doc, box.x + diffX, box.y + diffY + box.height + padding, box.x + diffX + box.width, box.y + diffY + box.height + padding)
+		if (boxDraw) {
+			doc.rect(box.x + diffX - padding,
+				box.y - padding + diffY,
+				box.width + padding * 2,
+				box.height + padding * 2)
+			doc.lineWidth(.2)
+			doc.save()
+			doc.dash(5).stroke([50, 0, 0, 0])
+
+
+			doc.restore()
+		}
+
+		if (annotate) {
+			doc.text(points.length - 1 + ". ",
+				box.x,
+				box.y + box.height + diffY
+			)
+		}
+	})
+
+	spread.push(doc => {
 		doc.restore()
 	})
 
@@ -313,27 +380,146 @@ function getBounds(points) {
 	};
 }
 
+function foldSchematic(x, y, w, h, points) {
+	return (doc) => {
+		doc.save()
+		// doc.translate(inch(1), inch(2))
+		// doc.rotate(-90, { origin: [x, y] })
+		// doc.text(x, y, w, h).stroke('red')
+		doc.rect(x, y, w, h).fillAndStroke([50, 0, 0, 0], 'black')
+		doc.font(tag.font)
+		points.forEach(e => {
+			doc.fontSize(6)
+			let bounds = doc.boundsOfString(e[0] + "", { lineBreak: false })
+			doc.undash()
+			doc.lineWidth(.1)
+			let pad = 1
+			doc.rect(x - 15 - pad, y + e[0] - pad, bounds.width + pad * 2, bounds.height + pad * 2)
+				.fillAndStroke("white", 'black')
+			doc.fillColor('black')
+			doc.text(e[0] + "", x - 15, y + e[0], { lineBreak: false })
+
+			bounds = doc.boundsOfString(e[1] + "", { lineBreak: false })
+			doc.rect(x + w + 5 - pad, y + e[1] - pad, bounds.width + pad * 2, bounds.height + pad * 2)
+				.fillAndStroke("white", 'black')
+			doc.undash()
+			doc.fillColor('black')
+			doc.text(e[1] + "", x + w + 5, y + e[1], { lineBreak: false })
+
+			doc.dash(3)
+			line(doc, x, y + e[0], x + w, y + e[1])
+		})
+		doc.restore()
+	}
+}
+
 function letterPage(code, transform = {}, dimensions = {
 	width: nw,
 	height: nh,
 }) {
+	let hangline = inch(6.5)
+	let spread = [
+		(doc) => {
+			line(doc, 0, hangline, 900, hangline, 'black', .1, 3)
+		}
+	]
+
+	let xOff = transform.xOff ? transform.xOff : 0
+
+	let positions = [
+		grid.verso_columns()[3].x,
+		grid.verso_columns()[6].x,
+		grid.recto_columns()[1].x,
+		grid.recto_columns()[4].x,
+		grid.recto_columns()[7].x,
+	]
+	let variable = [-3, -2, 0, 2, 3].forEach((e, i) => {
+		let itemX = positions[i]
+		// nx + xOff + i * 140
+
+		spread.push(doc => {
+			doc.fillOpacity(.9)
+			doc.rect(itemX - 23, inch(1.25), 95, 450)
+				.fillAndStroke('white', 'black')
+		})
+		let itemsDawg = letter(
+			itemX, hangline, dimensions.width + e, dimensions.height, code, {
+			...transform,
+		}, 'black', false, [90, 15, 0, 0], false)
+
+		spread.push(
+			foldSchematic(
+				itemX + 14,
+				inch(2),
+				dimensions.width + e,
+				dimensions.height,
+				code),
+		)
+
+		itemsDawg.forEach(e => spread.push(e))
+
+	})
+
+	return spread
+}
+function letterPageAndGraphics(code, transform = {}, dimensions = {
+	width: nw,
+	height: nh,
+}, title) {
+	return [
+		(doc) => draw_grid(doc, grid),
+		...letterPageGraphic(code, transform, dimensions),
+		...letterPage(code, transform, dimensions),
+		(doc) => {
+			doc.rect(
+				grid.verso_columns()[0].x,
+				grid.hanglines()[7],
+				grid.column_width(6),
+				inch(1.3)
+			).fillAndStroke("white", 'black')
+		},
+	]
+}
+
+function letterPageGraphic(code, transform = {}, dimensions = {
+	width: nw,
+	height: nh,
+}) {
 	let spread = []
+
 	let xOff = transform.xOff ? transform.xOff : 0
 	let yOff = transform.yOff ? transform.yOff : 0
-	code.forEach((e, i) => {
-		let items = letter(nx + xOff + (i * 130), ny + yOff, dimensions.width, dimensions.height,
-			code.slice(0, i + 1), transform)
+	let ySpacing = 135
+	let xSpacing = 135
+	let scale = 1
 
+	code.forEach((e, i) => {
+		let t = { ...transform, scale: [scale, { origin: [nx + xOff + (i * 130), ny + yOff + 130] }] }
+		let items = letter(nx + xOff + (i * xSpacing), ny + yOff, dimensions.width, dimensions.height,
+			code.slice(0, i + 1), t, [0, 0, 0, 45], true, [10, 0, 0, 0], false)
 		items.forEach(e => spread.push(e))
 	})
 
-	let items = letter(nx + xOff, ny + yOff, dimensions.width, dimensions.height, code, {
-		translate: [50, 380],
-		...transform,
-		scale: [1.3]
-	}, 'red')
+	code.forEach((e, i) => {
+		spread.push((doc) => doc.opacity((i / 10) + .5))
+		let t = { ...transform, scale: [scale, { origin: [nx + xOff + (i * 130), ny + yOff + 130] }] }
+		let items = letter(nx + xOff + (i * xSpacing), ny + yOff + ySpacing,
+			dimensions.width + 2, dimensions.height,
+			code.slice(0, i + 1), t,
+			[0, 0, 0, 50], false, [0, 0, 30, 0], false)
+		items.forEach(e => spread.push(e))
+	})
 
-	items.forEach(e => spread.push(e))
+	code.forEach((e, i) => {
+		let t = { ...transform, scale: [scale, { origin: [nx + xOff + (i * 130), ny + yOff + 130] }] }
+		spread.push((doc) => doc.opacity((i / 10) + .5))
+		let items = letter(nx + xOff + (i * xSpacing), ny + yOff + ySpacing * 2,
+			dimensions.width - 2, dimensions.height,
+			code.slice(0, i + 1), t,
+			[0, 0, 0, 50], false, [0, 0, 30, 0], false)
+		items.forEach(e => spread.push(e))
+	})
+
 
 	return spread
 }
@@ -344,6 +530,23 @@ let upperCaseG = [
 	[114, 130],
 	[174, 160],
 	[190, 205],
+]
+
+let upperCaseE = [
+	[56, 42],
+	[100, 116],
+	[156, 156],
+	[214, 198],
+	[226, 242],
+]
+
+let upperCaseE2 = [
+	[38, 54],
+	[82, 68],
+	[101, 101],
+	[135, 135],
+	[150, 137],
+	[178, 164],
 ]
 
 let upperCaseF = [
@@ -376,26 +579,78 @@ let upperCaseA = [
 	[178, 158],
 ]
 
-spreads.push(letterPage(upperCaseG, {
+let upperCaseB2 = [
+	[74, 66],
+	[103, 113],
+	[128, 140],
+	[171, 176],
+]
+
+let upperCaseC = [
+	[46, 28],
+	[50, 76],
+	[120, 105],
+	[140, 162],
+]
+
+
+spreads.push(letterPageAndGraphics(upperCaseG, {
+	yOff: 125,
+	// xOff: 40,
 	rotate: [180],
 }))
 
-spreads.push(letterPage(upperCaseF, {
+spreads.push(letterPageAndGraphics(upperCaseF, {
+	// yOff: -30,
 	rotate: [90],
 }))
 
-spreads.push(letterPage(upperCaseF2, {
+spreads.push(letterPageAndGraphics(upperCaseF, {
+	// yOff: -30,
 	rotate: [90],
 }))
 
-spreads.push(letterPage(upperCaseA, {
-	yOff: 90,
-	xOff: 40,
+spreads.push(letterPageAndGraphics(upperCaseB2, {
+	// yOff: -30,
+	rotate: [180],
+}))
+
+spreads.push(letterPageAndGraphics(upperCaseC, {
+	// yOff: -30,
+	rotate: [45],
+}, {
+	width: nw,
+	height: 167,
+}))
+
+spreads.push(letterPageAndGraphics(upperCaseE, {
+	// yOff: 90,
+	// xOff: 40,
+	rotate: [90],
+}, {
+	width: nw,
+	height: 268,
+}))
+
+spreads.push(letterPageAndGraphics(upperCaseF2, {
+	rotate: [90],
+	// yOff: -30,
+}))
+
+spreads.push(letterPageAndGraphics(upperCaseE2, {
+	// yOff: 90,
+	// xOff: 10,
+	rotate: [90],
+},))
+
+spreads.push(letterPageAndGraphics(upperCaseA, {
+	// yOff: 90,
+	// xOff: 40,
 	rotate: [168],
 }))
 
-spreads.push(letterPage(upperCaseB, {
-	xOff: -110
+spreads.push(letterPageAndGraphics(upperCaseB, {
+	// yOff: -30,
 	// rotate: [90],
 	// translate: [150, 0]
 }, {
@@ -415,9 +670,13 @@ let writeSpreads = (spreads, filename) => {
 	doc.pipe(fs.createWriteStream(filename));
 
 	spreads.forEach((spread, i) => {
+
+		doc.save()
+		doc.scale(.95, { origin: [inch(5.5), inch(4.25)] })
 		spread.forEach(item => {
 			item(doc)
 		})
+		doc.restore()
 		if (i != spreads.length - 1) doc.addPage()
 	})
 
