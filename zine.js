@@ -190,25 +190,9 @@ function mirror(p, m) {
 	return v(x2, y2)
 }
 
-let nx = 80
-let ny = 80
-let nw = 15
-let nh = 220
-
-let index = 0
-
-let code = [
-	[12, 27],
-	[68, 54],
-	[114, 130],
-	[174, 160],
-	[190, 205],
-]
-
-
 function letter(
 	x, y, w, h,
-	code, transforms
+	code, transforms, color = 'blue'
 ) {
 	let mainrect = [
 		v(x, y),
@@ -216,6 +200,8 @@ function letter(
 		v(x + w, y + h),
 		v(x, y + h)
 	]
+
+	let points = []
 
 	let baselines = []
 	code.forEach(points => {
@@ -231,8 +217,6 @@ function letter(
 
 	let spread = []
 	let _index = 0
-	let currentline = []
-	let currentmirror = []
 
 	let firstQuad = [
 		vdup(mainrect[0]),
@@ -241,17 +225,22 @@ function letter(
 		lines[0][0]
 	]
 
+	points.push(...firstQuad)
+
 	spread.push(doc => {
 		doc.save()
 		Object.entries(transforms).forEach(([key, value]) => {
-			doc[key](...value)
+			if (!Array.isArray(value)) return
+			if (key == 'rotate') doc[key](...value, { origin: [x, y] })
+			else doc[key](...value)
 		})
 	})
 
 	spread.push((doc) => {
 		drawQuadDocFn(
-			{ points: firstQuad, fill: 'white', stroke: 'blue', strokeWeight: 1 })(doc)
+			{ points: firstQuad, fill: 'white', stroke: color, strokeWeight: 1 })(doc)
 	})
+
 
 	while (lines.length > 1) {
 		let popped = lines.shift()
@@ -272,44 +261,147 @@ function letter(
 			drawQuadDocFn(
 				{
 					lineJoin: 'round',
-					points: f, fill: 'white', stroke: 'blue', strokeWeight: 1
+					points: f, fill: 'white', stroke: color, strokeWeight: 1
 				})(doc)
 		})
 
-		if (_index == index) {
-			currentline = popped
-			currentmirror = mirrorline
-		}
+		points.push(...f)
 
 		_index++
 	}
 
+	let box = getBounds(points)
+
+	let padding = 25
 	spread.push(doc => {
+		doc.rect(box.x - padding, box.y - padding, box.width + padding * 2, box.height + padding * 2)
+		doc.lineWidth(.5)
+		doc.stroke('blue')
 		doc.restore()
 	})
 
 	return spread
 }
 
-let spread = []
-code.forEach((e, i) => {
-	let items = letter(nx, ny, nw, nh, code.slice(0, i + 1), {
-		rotate: [180, { origin: [nx, ny] }],
-		translate: [-250, -150],
-		// scale: [2.3]
+
+let nx = 120
+let ny = 80
+let nw = 15
+let nh = 220
+function getBounds(points) {
+	if (!points.length) {
+		return { x: 0, y: 0, width: 0, height: 0 };
+	}
+
+	let minX = points[0].x;
+	let maxX = points[0].x;
+	let minY = points[0].y;
+	let maxY = points[0].y;
+
+	for (const p of points) {
+		if (p.x < minX) minX = p.x;
+		if (p.x > maxX) maxX = p.x;
+		if (p.y < minY) minY = p.y;
+		if (p.y > maxY) maxY = p.y;
+	}
+
+	return {
+		x: minX,
+		y: minY,
+		width: maxX - minX,
+		height: maxY - minY
+	};
+}
+
+function letterPage(code, transform = {}, dimensions = {
+	width: nw,
+	height: nh,
+}) {
+	let spread = []
+	let xOff = transform.xOff ? transform.xOff : 0
+	let yOff = transform.yOff ? transform.yOff : 0
+	code.forEach((e, i) => {
+		let items = letter(nx + xOff + (i * 130), ny + yOff, dimensions.width, dimensions.height,
+			code.slice(0, i + 1), transform)
+
+		items.forEach(e => spread.push(e))
 	})
+
+	let items = letter(nx + xOff, ny + yOff, dimensions.width, dimensions.height, code, {
+		translate: [50, 380],
+		...transform,
+		scale: [1.3]
+	}, 'red')
 
 	items.forEach(e => spread.push(e))
 
-	// spread.push(
-	// 	letter(nx, ny, nw, nh, code.slice(0, i + 1), {
-	// 	rotate: [180, { origin: [nx, ny] }],
-	// 	translate: [-250, -150],
-	// 	scale: [2.3]
-	// }))
-})
-spreads.push(spread)
+	return spread
+}
 
+let upperCaseG = [
+	[12, 27],
+	[68, 54],
+	[114, 130],
+	[174, 160],
+	[190, 205],
+]
+
+let upperCaseF = [
+	[35, 48],
+	[84, 68],
+	[110, 110],
+	[150, 134],
+	[178, 178],
+]
+
+let upperCaseF2 = [
+	[46, 31],
+	[58, 73],
+	[110, 110],
+	[162, 148],
+]
+
+let upperCaseB = [
+	[60, 75],
+	[107, 92],
+	[122, 138],
+	[168, 168],
+	[190, 206],
+	[228, 214],
+]
+
+let upperCaseA = [
+	[68, 72],
+	[143, 143],
+	[178, 158],
+]
+
+spreads.push(letterPage(upperCaseG, {
+	rotate: [180],
+}))
+
+spreads.push(letterPage(upperCaseF, {
+	rotate: [90],
+}))
+
+spreads.push(letterPage(upperCaseF2, {
+	rotate: [90],
+}))
+
+spreads.push(letterPage(upperCaseA, {
+	yOff: 90,
+	xOff: 40,
+	rotate: [168],
+}))
+
+spreads.push(letterPage(upperCaseB, {
+	xOff: -110
+	// rotate: [90],
+	// translate: [150, 0]
+}, {
+	width: nw,
+	height: 252,
+}))
 
 
 
@@ -323,14 +415,9 @@ let writeSpreads = (spreads, filename) => {
 	doc.pipe(fs.createWriteStream(filename));
 
 	spreads.forEach((spread, i) => {
-		// doc.save()
-		// doc.translate(inch(.5), inch(.5))
-
 		spread.forEach(item => {
 			item(doc)
 		})
-
-		// doc.restore()
 		if (i != spreads.length - 1) doc.addPage()
 	})
 
